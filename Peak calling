@@ -1,0 +1,114 @@
+# Selects peaks in a graph and creates a plot withthe peaks labeled with bold green dots.
+# Exports the values in .csv format
+# Analyzes all the .csv files in a selected folder selected at the begining of teh analysis
+
+import os
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.signal import find_peaks
+from tkinter import Tk, filedialog
+from pptx import Presentation
+from pptx.util import Inches
+
+def browse_folder():
+    root = Tk()
+    root.withdraw()
+    folder_path = filedialog.askdirectory(title="Select Folder Containing CSV Files")
+    return folder_path
+
+def process_and_export(file_path, images, image_titles):
+    # Read CSV file
+    data = pd.read_csv(file_path)
+
+    # Subtract minimum value from gray values
+    min_value = data['Gray_Value'].min()
+    data['Gray_Value'] -= min_value
+
+    # Plot the original data
+    plt.figure(figsize=(10, 6))
+    plt.plot(data['Distance_(cm)'], data['Gray_Value'], label='Original Data')
+    plt.title(f'Distance vs Gray Value - {os.path.splitext(os.path.basename(file_path))[0]}')
+    plt.xlabel('Distance (cm)')
+    plt.ylabel('Gray Value')
+
+    # Find peaks
+    peaks, _ = find_peaks(data['Gray_Value'])
+
+    if peaks.size > 0:  # Check if peaks exist
+        # Label the peaks from 1 onwards
+        peak_labels = [i + 1 for i in range(len(peaks))]
+
+        # Mark peaks on the plot
+        plt.plot(data['Distance_(cm)'][peaks], data['Gray_Value'][peaks], 'ro', label='Peaks')
+
+        # Number the peaks on the plot
+        for i, peak in enumerate(peaks):
+            plt.text(data['Distance_(cm)'][peak], data['Gray_Value'][peak], str(peak_labels[i]), fontsize=10, color='black')
+
+        plt.legend()
+
+        # Save original plot as image
+        plot_path = os.path.join(folder_path, f'plot_{os.path.splitext(os.path.basename(file_path))[0]}.png')
+        plt.savefig(plot_path)
+
+        # Add image and title to the lists
+        images.append(plot_path)
+        image_titles.append(f'Plot for {os.path.splitext(os.path.basename(file_path))[0]}')
+
+        # Export peak values to CSV file with peak numbers
+        peaks_data = pd.DataFrame({
+            'Peak_Number': peak_labels,
+            'Distance_(cm)': data['Distance_(cm)'][peaks],
+            'Gray_Value': data['Gray_Value'][peaks]
+        })
+        peaks_csv_path = os.path.join(folder_path, f'peaks_data_{os.path.splitext(os.path.basename(file_path))[0]}.csv')
+        peaks_data.to_csv(peaks_csv_path, index=False)
+
+        # Close the plot to prevent it from being displayed
+        plt.close()
+
+    else:
+        print(f"No peaks found in the data in file: {file_path}")
+
+def create_powerpoint(images, image_titles, output_path):
+    prs = Presentation()
+
+    # Iterate through the images and titles
+    for i in range(0, len(images), 4):
+        slide = prs.slides.add_slide(prs.slide_layouts[5])  # Use layout 5 for blank slides
+
+        # Add images to the slide
+        for j in range(min(4, len(images) - i)):
+            img_path = images[i + j]
+            title = image_titles[i + j]
+
+            left = Inches(j % 2 * 5)
+            top = Inches(int(j / 2) * 3)
+            pic = slide.shapes.add_picture(img_path, left, top, width=Inches(5), height=Inches(3))
+
+            # Add title to the image
+            title_shape = slide.shapes.add_textbox(left, top - Inches(0.5), width=pic.width, height=Inches(0.5))
+            title_frame = title_shape.text_frame
+            title_frame.text = title
+
+    # Save the PowerPoint presentation
+    prs.save(output_path)
+
+def analyze_files_in_folder(folder_path):
+    csv_files = [file for file in os.listdir(folder_path) if file.endswith('.csv')]
+    images = []
+    image_titles = []
+
+    for i, csv_file in enumerate(csv_files):
+        file_path = os.path.join(folder_path, csv_file)
+        process_and_export(file_path, images, image_titles)
+
+    if images:
+        create_powerpoint(images, image_titles, os.path.join(folder_path, 'output_presentation.pptx'))
+
+if __name__ == "__main__":
+    folder_path = browse_folder()
+
+    if folder_path:
+        analyze_files_in_folder(folder_path)
